@@ -1,0 +1,76 @@
+services:
+  mongo:
+    image: mongo:7
+    command:
+      - mongod
+      - --bind_ip_all
+      - --auth
+      - --tlsMode
+      - requireTLS
+      - --tlsCertificateKeyFile
+      - /etc/mongo/tls/mongo.pem
+      - --tlsCAFile
+      - /etc/mongo/tls/ca.crt
+      - --tlsAllowConnectionsWithoutCertificates
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./certs/mongo.pem:/etc/mongo/tls/mongo.pem:ro
+      - ./certs/ca.crt:/etc/mongo/tls/ca.crt:ro
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.10
+    ports:
+      - "127.0.0.1:9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "true"
+      xpack.security.http.ssl.key: certs/elasticsearch.key
+      xpack.security.http.ssl.certificate: certs/elasticsearch.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca.crt
+      xpack.security.transport.ssl.enabled: "true"
+      xpack.security.transport.ssl.verification_mode: certificate
+      xpack.security.transport.ssl.client_authentication: required
+      xpack.security.transport.ssl.key: certs/transport.key
+      xpack.security.transport.ssl.certificate: certs/transport.crt
+      xpack.security.transport.ssl.certificate_authorities: certs/transport-ca.crt
+      path.repo: /usr/share/elasticsearch/snapshots
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+      - ./certs/elasticsearch.key:/usr/share/elasticsearch/config/certs/elasticsearch.key:ro
+      - ./certs/elasticsearch.crt:/usr/share/elasticsearch/config/certs/elasticsearch.crt:ro
+      - ./certs/ca.crt:/usr/share/elasticsearch/config/certs/ca.crt:ro
+      - ./backups/elasticsearch:/usr/share/elasticsearch/snapshots
+      - ./certs/transport/elasticsearch.key:/usr/share/elasticsearch/config/certs/transport.key:ro
+      - ./certs/transport/elasticsearch.crt:/usr/share/elasticsearch/config/certs/transport.crt:ro
+      - ./certs/transport/ca.crt:/usr/share/elasticsearch/config/certs/transport-ca.crt:ro
+
+  fastapi-app:
+    build: ./fastapi-app
+    ports:
+      - "127.0.0.1:8443:8443"
+    depends_on:
+      - mongo
+      - elasticsearch
+    environment:
+      MONGO_HOST: mongo
+      MONGO_PORT: "27017"
+      MONGO_USER: ${MONGO_APP_USER}
+      MONGO_PASSWORD: ${MONGO_APP_PASSWORD}
+      MONGO_AUTH_SOURCE: tienda
+      MONGO_DATABASE: tienda
+      MONGO_CA: /certs/ca.crt
+      ELASTIC_URL: https://elasticsearch:9200
+      ELASTIC_USER: ${ELASTIC_APP_USER}
+      ELASTIC_PASSWORD: ${ELASTIC_APP_PASSWORD}
+      ELASTIC_CA: /certs/ca.crt
+    volumes:
+      - ./certs:/certs:ro
+
+volumes:
+  mongo_data:
+  elastic_data:
